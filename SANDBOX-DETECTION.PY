@@ -59,7 +59,7 @@ def check_mac_address():
 
 def check_uptime():
     uptime = time.time() - psutil.boot_time()
-    return uptime < 600  # 10 dakikadan azsa şüpheli
+    return uptime < 600  
 
 def sandbox_detected():
     if any([
