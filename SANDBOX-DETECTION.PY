@@ -1,81 +1,69 @@
 import os
 import platform
-import socket
 import subprocess
-import psutil
-import winreg
 import uuid
-import time
+import psutil
 
-def check_registry_keys():
-    suspicious_keys = [
-        r"HARDWARE\ACPI\DSDT\VBOX__",
-        r"HARDWARE\ACPI\FADT\VBOX__",
-        r"HARDWARE\ACPI\RSDT\VBOX__",
-        r"SOFTWARE\Oracle\VirtualBox Guest Additions",
-        r"SYSTEM\ControlSet001\Services\VBoxGuest",
-        r"SYSTEM\ControlSet001\Services\VBoxService",
-        r"SOFTWARE\VMware, Inc.\VMware Tools"
-    ]
-    for key in suspicious_keys:
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key):
-                return True
-        except:
-            continue
-    return False
+def check_username():
+    user = os.getenv("USERNAME") or os.getenv("USER")
+    suspicious = ["user", "test", "sandbox", "malware", "analyst"]
+    return user.lower() in suspicious if user else False
 
-def check_cpu_count():
-    return os.cpu_count() <= 2
-
-def check_ram():
-    total_gb = psutil.virtual_memory().total / (1024 ** 3)
-    return total_gb <= 4
-
-def check_bios_manufacturer():
-    try:
-        output = subprocess.check_output("wmic bios get manufacturer", shell=True).decode()
-        vm_indicators = ["vbox", "virtual", "vmware", "qemu", "xen"]
-        for indicator in vm_indicators:
-            if indicator in output.lower():
-                return True
-    except:
-        pass
-    return False
-
-def check_motherboard():
-    try:
-        output = subprocess.check_output("wmic baseboard get manufacturer", shell=True).decode()
-        if any(x in output.lower() for x in ["vmware", "virtual", "vbox"]):
-            return True
-    except:
-        pass
-    return False
+def check_env_vars():
+    required = ["APPDATA", "PROGRAMFILES", "SYSTEMROOT", "TEMP"]
+    return any(os.getenv(var) is None for var in required)
 
 def check_mac_address():
-    mac = ':'.join(['{:02x}'.format((uuid.getnode() >> elements) & 0xff) for elements in range(0, 2*6, 8)][::-1])
-    vm_mac_prefixes = ['00:05:69', '00:0C:29', '00:1C:14', '00:50:56']  # VMware MAC'leri
-    return any(mac.startswith(prefix.lower()) for prefix in vm_mac_prefixes)
+    mac = hex(uuid.getnode())
+    vm_macs = ["00:05:69", "00:0C:29", "00:1C:14", "00:50:56", "08:00:27"]
+    return any(mac.replace("0x", "").lower().startswith(m.replace(":", "").lower()) for m in vm_macs)
 
-def check_uptime():
-    uptime = time.time() - psutil.boot_time()
-    return uptime < 600  
+def check_vm_files():
+    paths = [
+        "C:\\Program Files\\VMware\\VMware Tools",
+        "C:\\Program Files\\Oracle\\VirtualBox Guest Additions",
+        "/usr/bin/VBoxControl",
+        "/usr/bin/qemu-ga"
+    ]
+    return any(os.path.exists(path) for path in paths)
 
-def sandbox_detected():
-    if any([
-        check_registry_keys(),
-        check_cpu_count(),
-        check_ram(),
-        check_bios_manufacturer(),
-        check_motherboard(),
-        check_mac_address(),
-        check_uptime()
-    ]):
-        return True
+def check_cpu_cores():
+    return psutil.cpu_count(logical=True) <= 2
+
+def check_ram():
+    ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    return ram_gb < 4  # Less than 4GB is suspicious
+
+def check_system_manufacturer():
+    try:
+        if platform.system() == "Windows":
+            output = subprocess.check_output("wmic computersystem get manufacturer", shell=True)
+            if any(x in output.decode().lower() for x in ["vmware", "virtualbox", "qemu", "kvm", "xen"]):
+                return True
+    except Exception:
+        pass
     return False
 
-if __name__ == "__main__":
-    if sandbox_detected():
-        print("SANDBOX DETECTED!")
+def is_sandbox():
+    detections = {
+        "Suspicious username": check_username(),
+        "Missing environment variable": check_env_vars(),
+        "VM MAC address": check_mac_address(),
+        "VM-related files found": check_vm_files(),
+        "Low CPU core count": check_cpu_cores(),
+        "Low RAM": check_ram(),
+        "Virtualization manufacturer detected": check_system_manufacturer(),
+    }
+
+    detected = [key for key, value in detections.items() if value]
+    if len(detected) >= 3:
+        print("[!] Sandbox detected:")
+        for d in detected:
+            print(f" - {d}")
+        return True
     else:
-        print("REAL COMPUTER!")
+        print("[+] No sandbox detected.")
+        return False
+
+if __name__ == "__main__":
+    is_sandbox()
