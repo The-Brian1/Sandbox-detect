@@ -23,7 +23,7 @@ This Python script attempts to detect if it's running inside a virtual machine o
 pip install -r requirements.txt
 ```
 
-## Using
+## Usage
 
 ```bash
 python SANDBOX-DETECTION.PY
